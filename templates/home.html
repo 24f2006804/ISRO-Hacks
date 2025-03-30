@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12 mb-4">
+        <h2>Space Station Inventory Dashboard</h2>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Inventory Overview</h5>
+                <div id="inventoryStats">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Waste Items</h5>
+                <div id="wasteStats">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Quick Search</h5>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="quickSearch" placeholder="Enter Item ID...">
+                    <button class="btn btn-primary" onclick="quickSearch()">Search</button>
+                </div>
+                <div id="quickSearchResults" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="col-md-8 mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Recent Activity</h5>
+                <div id="recentActivity">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="col-md-4 mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Quick Actions</h5>
+                <div class="d-grid gap-2">
+                    <a href="/inventory" class="btn btn-primary">Manage Inventory</a>
+                    <a href="/waste" class="btn btn-warning">Check Waste Items</a>
+                    <a href="/simulation" class="btn btn-info">Run Simulation</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardData();
+});
+
+async function loadDashboardData() {
+    // Load inventory stats
+    try {
+        const response = await axios.get('/api/search');
+        const inventoryStats = document.getElementById('inventoryStats');
+        if (response.data) {
+            const stats = response.data;
+            inventoryStats.innerHTML = `
+                <p>Total Items: ${stats.totalItems || 0}</p>
+                <p>Active Items: ${stats.activeItems || 0}</p>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading inventory stats:', error);
+    }
+
+    // Load waste stats
+    try {
+        const response = await axios.get('/api/waste/identify');
+        const wasteStats = document.getElementById('wasteStats');
+        if (response.data && response.data.wasteItems) {
+            wasteStats.innerHTML = `
+                <p>Waste Items: ${response.data.wasteItems.length}</p>
+                <button class="btn btn-sm btn-warning" onclick="window.location.href='/waste'">
+                    View Details
+                </button>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading waste stats:', error);
+    }
+
+    // Load recent activity
+    try {
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+        const response = await axios.get(`/api/logs?startDate=${yesterday.toISOString()}&endDate=${now.toISOString()}`);
+        const recentActivity = document.getElementById('recentActivity');
+        if (response.data && response.data.logs) {
+            const activities = response.data.logs.slice(0, 5);
+            if (activities.length === 0) {
+                recentActivity.innerHTML = '<p class="text-muted">No recent activity</p>';
+            } else {
+                recentActivity.innerHTML = `
+                    <div class="list-group">
+                        ${activities.map(log => `
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">${log.actionType}</h6>
+                                    <small>${formatDate(log.timestamp)}</small>
+                                </div>
+                                <p class="mb-1">Item: ${log.itemId}</p>
+                                <small>User: ${log.userId}</small>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading recent activity:', error);
+    }
+}
+
+function quickSearch() {
+    const searchInput = document.getElementById('quickSearch');
+    const resultsDiv = document.getElementById('quickSearchResults');
+    
+    if (!searchInput.value) {
+        resultsDiv.innerHTML = '';
+        return;
+    }
+
+    axios.get(`/api/search?itemId=${searchInput.value}`)
+        .then(response => {
+            if (response.data.found) {
+                const item = response.data.item;
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <h6>${item.name}</h6>
+                        <p class="mb-0">
+                            Location: ${item.containerId || 'Not placed'}<br>
+                            Status: ${item.isWaste ? 'Waste' : 'Active'}
+                        </p>
+                    </div>
+                `;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        Item not found
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            resultsDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    Error searching for item
+                </div>
+            `;
+        });
+}
+</script>
+{% endblock %}

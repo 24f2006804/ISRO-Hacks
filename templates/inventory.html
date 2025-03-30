@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Inventory Management</h2>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Search Inventory</h5>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Enter Item ID..." oninput="searchHandler(this.value)">
+                    <button class="btn btn-outline-secondary" type="button" onclick="searchHandler(document.getElementById('searchInput').value)">Search</button>
+                </div>
+                <div id="searchResults"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Import Items</h5>
+                <div class="drag-drop-zone" data-endpoint="/api/import/items">
+                    <p>Drag and drop your items CSV file here or click to select</p>
+                    <input type="file" class="d-none" accept=".csv">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Import Containers</h5>
+                <div class="drag-drop-zone" data-endpoint="/api/import/containers">
+                    <p>Drag and drop your containers CSV file here or click to select</p>
+                    <input type="file" class="d-none" accept=".csv">
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Export Arrangement</h5>
+                <button class="btn btn-primary w-100" onclick="exportArrangement()">Export to CSV</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function exportArrangement() {
+    axios.get('/api/export/arrangement')
+        .then(response => {
+            // Create blob and download link
+            const blob = new Blob([response.data.content], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'arrangement_' + new Date().toISOString().split('T')[0] + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            showAlert('Arrangement exported successfully');
+        })
+        .catch(error => showAlert(error.message, 'danger'));
+}
+
+// Initialize file input click handlers
+document.querySelectorAll('.drag-drop-zone').forEach(zone => {
+    const input = zone.querySelector('input[type="file"]');
+    zone.addEventListener('click', () => input.click());
+    input.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0], zone.dataset.endpoint);
+        }
+    });
+});
+</script>
+{% endblock %}

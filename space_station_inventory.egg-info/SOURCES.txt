@@ -1,0 +1,8 @@
+setup.py
+space_station_inventory.egg-info/PKG-INFO
+space_station_inventory.egg-info/SOURCES.txt
+space_station_inventory.egg-info/dependency_links.txt
+space_station_inventory.egg-info/requires.txt
+space_station_inventory.egg-info/top_level.txt
+tests/__init__.py
+tests/test_inventory.py

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Time Simulation - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Time Simulation</h5>
+                <form id="simulationForm" onsubmit="runSimulation(event)">
+                    <div class="mb-3">
+                        <label class="form-label">Number of Days</label>
+                        <input type="number" class="form-control" name="numOfDays" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Items to Use Daily</label>
+                        <div id="itemsList">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+                                <button type="button" class="btn btn-outline-danger" onclick="removeItem(this)">Remove</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary" onclick="addItem()">Add Item</button>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Run Simulation</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Simulation Results</h5>
+                <div id="simulationResults">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addItem() {
+    const itemsList = document.getElementById('itemsList');
+    const newItem = document.createElement('div');
+    newItem.className = 'input-group mb-2';
+    newItem.innerHTML = `
+        <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+        <button type="button" class="btn btn-outline-danger" onclick="removeItem(this)">Remove</button>
+    `;
+    itemsList.appendChild(newItem);
+}
+
+function removeItem(button) {
+    button.closest('.input-group').remove();
+}
+
+function runSimulation(event) {
+    event.preventDefault();
+    const form = event.target;
+    const items = Array.from(form.querySelectorAll('input[name="items[]"]'))
+        .map(input => ({ itemId: input.value }))
+        .filter(item => item.itemId);
+
+    const data = {
+        numOfDays: parseInt(form.numOfDays.value),
+        itemsToBeUsedPerDay: items
+    };
+
+    axios.post('/api/simulate/day', data)
+        .then(response => {
+            if (response.data.success) {
+                const results = response.data.changes;
+                document.getElementById('simulationResults').innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>New Date:</strong> ${formatDate(response.data.newDate)}
+                    </div>
+                    
+                    <h6>Items Used:</h6>
+                    <ul>
+                        ${results.itemsUsedToday.map(item => `
+                            <li>${item.name} (${item.itemId}) - ${item.remainingUses} uses remaining</li>
+                        `).join('')}
+                    </ul>
+
+                    ${results.itemsDepletedToday.length ? `
+                        <h6>Items Depleted:</h6>
+                        <ul>
+                            ${results.itemsDepletedToday.map(item => `
+                                <li>${item.name} (${item.itemId})</li>
+                            `).join('')}
+                        </ul>
+                    ` : ''}
+
+                    ${results.itemsExpiredToday.length ? `
+                        <h6>Items Expired:</h6>
+                        <ul>
+                            ${results.itemsExpiredToday.map(item => `
+                                <li>${item.name} (${item.itemId})</li>
+                            `).join('')}
+                        </ul>
+                    ` : ''}
+                `;
+                showAlert('Simulation completed successfully');
+            }
+        })
+        .catch(error => showAlert(error.message, 'danger'));
+}
+</script>
+{% endblock %}

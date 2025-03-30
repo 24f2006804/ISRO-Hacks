@@ -1,0 +1,4 @@
+Item ID,Name,Width,Depth,Height,Mass,Priority,Expiry Date,Usage Limit,Preferred Zone
+001,Test Item 1,10,10,20,5,80,2025-12-31,10,Zone A
+002,Test Item 2,15,15,25,8,70,2025-06-30,5,Zone B
+003,Test Item 3,20,20,30,12,90,2024-12-31,15,Zone A

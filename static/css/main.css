@@ -1,0 +1,51 @@
+.card {
+    margin-bottom: 1.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.form-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.drag-drop-zone {
+    border: 2px dashed #ccc;
+    border-radius: 4px;
+    padding: 2rem;
+    text-align: center;
+    background-color: #f8f9fa;
+    cursor: pointer;
+}
+
+.drag-drop-zone.dragover {
+    background-color: #e9ecef;
+    border-color: #6c757d;
+}
+
+.placement-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.waste-item {
+    border-left: 4px solid #dc3545;
+    margin-bottom: 1rem;
+}
+
+.log-entry {
+    padding: 0.5rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.alert-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1050;
+}

@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: space_station_inventory
+Version: 0.1.0
+Requires-Python: >=3.8
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn>=0.20.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-multipart>=0.0.5
+Requires-Dist: aiosqlite>=0.17.0
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: pytest>=7.0.0
+Requires-Dist: httpx>=0.24.0
+Dynamic: requires-dist
+Dynamic: requires-python
