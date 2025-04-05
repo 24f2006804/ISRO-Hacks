@@ -1,0 +1,11 @@
+Container ID,Zone,Width,Depth,Height
+contA,Crew Quarters,100,85,200
+contB,Airlock,50,85,200
+contC,Laboratory,200,85,200
+contD,Medical Bay,150,85,200
+contE,Storage,180,85,200
+contF,Exercise Area,120,85,200
+contG,Communications,80,85,200
+contH,Maintenance,160,85,200
+contI,Research Lab,175,85,200
+contJ,Waste Management,90,85,200

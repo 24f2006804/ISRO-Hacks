@@ -1,0 +1,21 @@
+Item ID,Name,Width,Depth,Height,Mass,Priority,Expiry Date,Usage Limit,Preferred Zone
+001,Food Packet,10,10,20,5,80,2025-05-20,30,Crew Quarters
+002,Oxygen Cylinder,15,15,50,30,95,,100,Airlock
+003,First Aid Kit,20,20,10,2,100,2025-07-10,5,Medical Bay
+004,Water Filter,25,25,40,8,90,2026-03-15,50,Storage
+005,Exercise Equipment,60,40,150,45,70,,200,Exercise Area
+006,Lab Equipment,40,30,35,15,85,2027-01-10,150,Laboratory
+007,Communication Device,15,10,5,1,92,,80,Communications
+008,Maintenance Tools,45,30,25,12,75,,100,Maintenance
+009,Research Samples,20,20,30,3,88,2025-08-20,20,Research Lab
+010,Emergency Lights,10,10,25,2,85,,50,Storage
+011,Medical Supplies,25,20,15,4,95,2025-12-31,30,Medical Bay
+012,Space Suits,70,50,180,35,98,,40,Airlock
+013,Air Filters,30,30,40,6,93,2026-06-30,25,Maintenance
+014,Hygiene Supplies,25,20,30,3,75,2025-09-15,40,Storage
+015,Scientific Instruments,35,25,20,8,87,,60,Laboratory
+016,Waste Containers,40,40,50,5,65,,150,Waste Management
+017,Emergency Rations,15,15,25,4,89,2026-02-28,20,Storage
+018,Battery Pack,20,15,10,6,88,,75,Communications
+019,Temperature Sensors,10,8,5,0.5,82,,100,Research Lab
+020,Radiation Shields,45,35,5,15,96,,30,Laboratory

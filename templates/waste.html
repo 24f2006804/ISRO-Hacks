@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Waste Management - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Waste Management</h2>
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Identified Waste Items</h5>
+                <div id="wasteItems" class="mt-3">
+                    <!-- Waste items will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Return Planning</h5>
+                <form id="returnPlanForm" onsubmit="planReturn(event)">
+                    <div class="mb-3">
+                        <label class="form-label">Undocking Container ID</label>
+                        <input type="text" class="form-control" name="undockingContainerId" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Undocking Date</label>
+                        <input type="datetime-local" class="form-control" name="undockingDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max Weight (kg)</label>
+                        <input type="number" class="form-control" name="maxWeight" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Plan Return</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4" id="returnPlanCard" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">Return Plan</h5>
+                <div id="returnPlan">
+                    <!-- Return plan will be displayed here -->
+                </div>
+                <button class="btn btn-success w-100 mt-3" onclick="completeUndocking()">Complete Undocking</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Load waste items
+function loadWasteItems() {
+    loadData('/api/waste/identify', 'wasteItems', data => {
+        if (!data.wasteItems.length) {
+            return '<p class="text-muted">No waste items identified.</p>';
+        }
+
+        return data.wasteItems.map(item => `
+            <div class="waste-item card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">ID: ${item.itemId}</h6>
+                    <p class="card-text">
+                        Name: ${item.name}<br>
+                        Reason: ${item.reason}<br>
+                        Container: ${item.containerId}
+                    </p>
+                </div>
+            </div>
+        `).join('');
+    });
+}
+
+// Plan return
+function planReturn(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        undockingContainerId: form.undockingContainerId.value,
+        undockingDate: new Date(form.undockingDate.value).toISOString(),
+        maxWeight: parseFloat(form.maxWeight.value)
+    };
+
+    axios.post('/api/waste/return-plan', data)
+        .then(response => {
+            if (response.data.success) {
+                document.getElementById('returnPlanCard').style.display = 'block';
+                const plan = response.data;
+                document.getElementById('returnPlan').innerHTML = `
+                    <p><strong>Total Items:</strong> ${plan.returnManifest.returnItems.length}</p>
+                    <p><strong>Total Weight:</strong> ${plan.returnManifest.totalWeight.toFixed(2)} kg</p>
+                    <p><strong>Total Volume:</strong> ${plan.returnManifest.totalVolume.toFixed(2)} m³</p>
+                    <hr>
+                    <h6>Steps:</h6>
+                    <ol>
+                        ${plan.returnPlan.map(step => `
+                            <li>Move item ${step.itemId} from ${step.fromContainer} to ${step.toContainer}</li>
+                        `).join('')}
+                    </ol>
+                `;
+                showAlert('Return plan generated successfully');
+            }
+        })
+        .catch(error => showAlert(error.message, 'danger'));
+}
+
+// Complete undocking
+function completeUndocking() {
+    const form = document.getElementById('returnPlanForm');
+    const data = {
+        undockingContainerId: form.undockingContainerId.value,
+        timestamp: new Date().toISOString()
+    };
+
+    axios.post('/api/waste/complete-undocking', null, { params: data })
+        .then(response => {
+            if (response.data.success) {
+                showAlert('Undocking completed successfully');
+                document.getElementById('returnPlanCard').style.display = 'none';
+                loadWasteItems();  // Refresh waste items list
+            }
+        })
+        .catch(error => showAlert(error.message, 'danger'));
+}
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', loadWasteItems);
+</script>
+{% endblock %}

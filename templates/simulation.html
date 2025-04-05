@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}Time Simulation - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div id="simulationContainer" class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Time Simulation</h5>
+                <form id="simulationForm" onsubmit="runSimulation(event)">
+                    <div class="mb-3">
+                        <label class="form-label">Number of Days</label>
+                        <input type="number" class="form-control" name="numOfDays" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Items to Use Daily</label>
+                        <div id="itemsList">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+                                <button type="button" class="btn btn-outline-danger" onclick="removeItem(this)">Remove</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary" onclick="addItem()">Add Item</button>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="simulateBtn">Run Simulation</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Quick Simulation</h5>
+                <form id="nextDayForm" onsubmit="simulateNextDay(event)">
+                    <div class="mb-3">
+                        <label class="form-label">Items to Use Today</label>
+                        <div id="nextDayItemsList">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+                                <button type="button" class="btn btn-outline-danger" onclick="removeNextDayItem(this)">Remove</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary" onclick="addNextDayItem()">Add Item</button>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="nextDayBtn">
+                        <i class="fas fa-forward"></i> Next Day
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Simulation Status</h5>
+                <div id="simulationProgress" class="progress mb-3" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="currentDate" class="text-center mb-3">
+                    <h6>Current Date: <span id="dateDisplay">-</span></h6>
+                </div>
+                <div id="simulationResults">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6>Items Used</h6>
+                                    <span id="itemsUsedCount" class="h4">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body text-center">
+                                    <h6>Items Depleted</h6>
+                                    <span id="itemsDepletedCount" class="h4">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-danger text-white">
+                                <div class="card-body text-center">
+                                    <h6>Items Expired</h6>
+                                    <span id="itemsExpiredCount" class="h4">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <h6>Detailed Results</h6>
+                        <div id="detailedResults" class="list-group">
+                            <!-- Results will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addItem() {
+    const itemsList = document.getElementById('itemsList');
+    const newItem = document.createElement('div');
+    newItem.className = 'input-group mb-2';
+    newItem.innerHTML = `
+        <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+        <button type="button" class="btn btn-outline-danger" onclick="removeItem(this)">Remove</button>
+    `;
+    itemsList.appendChild(newItem);
+}
+
+function removeItem(button) {
+    button.closest('.input-group').remove();
+}
+
+async function runSimulation(event) {
+    event.preventDefault();
+    const form = event.target;
+    const submitBtn = form.querySelector('#simulateBtn');
+    submitBtn.disabled = true;
+
+    const days = parseInt(form.numOfDays.value);
+    const items = Array.from(form.querySelectorAll('input[name="items[]"]'))
+        .map(input => ({ itemId: input.value }))
+        .filter(item => item.itemId);
+
+    const data = {
+        numOfDays: days,
+        itemsToBeUsedPerDay: items
+    };
+
+    // Reset counters
+    document.getElementById('itemsUsedCount').textContent = '0';
+    document.getElementById('itemsDepletedCount').textContent = '0';
+    document.getElementById('itemsExpiredCount').textContent = '0';
+    document.getElementById('detailedResults').innerHTML = '';
+
+    // Start simulation animation
+    const progressBar = document.querySelector('.progress-bar');
+    const dateDisplay = document.getElementById('dateDisplay');
+    const startDate = new Date();
+    dateDisplay.textContent = startDate.toLocaleDateString();
+
+    try {
+        // Run the actual simulation
+        const response = await axios.post('/api/simulate/day', data);
+        
+        if (response.data.success) {
+            // Animate time passage
+            await simulateTimePassage(days, progressBar, dateDisplay, startDate);
+
+            const results = response.data.changes;
+            
+            // Update counters with animation
+            animateCounter('itemsUsedCount', results.itemsUsedToday.length);
+            animateCounter('itemsDepletedCount', results.itemsDepletedToday.length);
+            animateCounter('itemsExpiredCount', results.itemsExpiredToday.length);
+
+            // Display detailed results with animation
+            const detailedResults = document.getElementById('detailedResults');
+            
+            // Items Used
+            results.itemsUsedToday.forEach((item, index) => {
+                setTimeout(() => {
+                    const element = createResultElement(item, 'used');
+                    detailedResults.appendChild(element);
+                }, index * 200);
+            });
+
+            // Items Depleted
+            results.itemsDepletedToday.forEach((item, index) => {
+                setTimeout(() => {
+                    const element = createResultElement(item, 'depleted');
+                    detailedResults.appendChild(element);
+                }, (results.itemsUsedToday.length + index) * 200);
+            });
+
+            // Items Expired
+            results.itemsExpiredToday.forEach((item, index) => {
+                setTimeout(() => {
+                    const element = createResultElement(item, 'expired');
+                    detailedResults.appendChild(element);
+                }, (results.itemsUsedToday.length + results.itemsDepletedToday.length + index) * 200);
+            });
+
+            showAlert('Simulation completed successfully');
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+
+function createResultElement(item, type) {
+    const element = document.createElement('div');
+    element.className = 'list-group-item list-group-item-action';
+    element.style.animation = 'slideIn 0.3s ease-out';
+    
+    let statusBadge = '';
+    switch(type) {
+        case 'used':
+            statusBadge = '<span class="badge bg-primary">Used</span>';
+            break;
+        case 'depleted':
+            statusBadge = '<span class="badge bg-warning">Depleted</span>';
+            break;
+        case 'expired':
+            statusBadge = '<span class="badge bg-danger">Expired</span>';
+            break;
+    }
+
+    element.innerHTML = `
+        <div class="d-flex w-100 justify-content-between">
+            <h6 class="mb-1">${item.name} (${item.itemId})</h6>
+            ${statusBadge}
+        </div>
+        ${type === 'used' ? `<p class="mb-1">Remaining Uses: ${item.remainingUses}</p>` : ''}
+    `;
+    
+    return element;
+}
+
+function animateCounter(elementId, targetValue) {
+    const element = document.getElementById(elementId);
+    const duration = 1000; // 1 second
+    const steps = 20;
+    const increment = targetValue / steps;
+    let current = 0;
+    let step = 0;
+
+    const interval = setInterval(() => {
+        step++;
+        current += increment;
+        element.textContent = Math.round(current);
+        
+        if (step >= steps) {
+            clearInterval(interval);
+            element.textContent = targetValue;
+        }
+    }, duration / steps);
+}
+
+async function simulateTimePassage(days, progressBar, dateDisplay, startDate) {
+    const millisecondsPerDay = 100; // Simulation speed (100ms per day)
+    const totalTime = days * millisecondsPerDay;
+    let elapsed = 0;
+
+    while (elapsed < totalTime) {
+        await new Promise(resolve => setTimeout(resolve, millisecondsPerDay));
+        elapsed += millisecondsPerDay;
+        
+        // Update progress bar
+        const progress = (elapsed / totalTime) * 100;
+        progressBar.style.width = `${progress}%`;
+
+        // Update date display
+        const currentDate = new Date(startDate.getTime() + (elapsed / millisecondsPerDay) * 86400000);
+        dateDisplay.textContent = currentDate.toLocaleDateString();
+
+        // Toggle day/night effect
+        document.getElementById('simulationContainer').classList.toggle('simulation-day');
+    }
+}
+
+// Add new functions for next day simulation
+function addNextDayItem() {
+    const itemsList = document.getElementById('nextDayItemsList');
+    const newItem = document.createElement('div');
+    newItem.className = 'input-group mb-2';
+    newItem.innerHTML = `
+        <input type="text" class="form-control" placeholder="Item ID" name="items[]">
+        <button type="button" class="btn btn-outline-danger" onclick="removeNextDayItem(this)">Remove</button>
+    `;
+    itemsList.appendChild(newItem);
+}
+
+function removeNextDayItem(button) {
+    button.closest('.input-group').remove();
+}
+
+async function simulateNextDay(event) {
+    event.preventDefault();
+    const form = event.target;
+    const submitBtn = form.querySelector('#nextDayBtn');
+    submitBtn.disabled = true;
+
+    const items = Array.from(form.querySelectorAll('input[name="items[]"]'))
+        .map(input => ({ itemId: input.value.trim() }))
+        .filter(item => item.itemId);
+
+    const data = {
+        numOfDays: 1,
+        itemsToBeUsedPerDay: items
+    };
+
+    try {
+        // Run the simulation
+        const response = await axios.post('/api/simulate/day', data);
+        
+        if (response.data.success) {
+            // Update date display
+            const newDate = new Date(response.data.newDate);
+            document.getElementById('dateDisplay').textContent = newDate.toLocaleDateString();
+
+            const results = response.data.changes;
+            
+            // Update counters
+            document.getElementById('itemsUsedCount').textContent = results.itemsUsedToday.length;
+            document.getElementById('itemsDepletedCount').textContent = results.itemsDepletedToday.length;
+            document.getElementById('itemsExpiredCount').textContent = results.itemsExpiredToday.length;
+
+            // Display results
+            const detailedResults = document.getElementById('detailedResults');
+            detailedResults.innerHTML = ''; // Clear previous results
+            
+            // Show used items
+            results.itemsUsedToday.forEach(item => {
+                detailedResults.appendChild(createResultElement(item, 'used'));
+            });
+
+            // Show depleted items
+            results.itemsDepletedToday.forEach(item => {
+                detailedResults.appendChild(createResultElement(item, 'depleted'));
+            });
+
+            // Show expired items
+            results.itemsExpiredToday.forEach(item => {
+                detailedResults.appendChild(createResultElement(item, 'expired'));
+            });
+
+            // Toggle day/night effect
+            document.getElementById('simulationContainer').classList.toggle('simulation-day');
+            
+            showAlert('Day simulated successfully');
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

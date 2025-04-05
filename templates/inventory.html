@@ -1,0 +1,539 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory - Space Station Inventory{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Inventory Management</h2>
+        
+        <!-- Container Visualizations -->
+        <div class="container-grid mb-4">
+            {% for container in containers %}
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ container.id }} - {{ container.zone }}</h5>
+                    <div class="container-visualization" data-container-id="{{ container.id }}" style="height: 400px;">
+                        <!-- 3D visualization will be rendered here -->
+                    </div>
+                    <div class="container-stats mt-2">
+                        <small class="text-muted">
+                            Dimensions: {{ container.width }}x{{ container.depth }}x{{ container.height }}
+                        </small>
+                        <div class="space-utilization-bar mt-1" id="utilization-{{ container.id }}"></div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Import Forms -->
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Import Items</h5>
+                        <div class="drag-drop-zone" data-endpoint="/api/import/items">
+                            <p>Drag and drop your items CSV file here or click to select</p>
+                            <input type="file" class="d-none" accept=".csv">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Import Containers</h5>
+                        <div class="drag-drop-zone" data-endpoint="/api/import/containers">
+                            <p>Drag and drop your containers CSV file here or click to select</p>
+                            <input type="file" class="d-none" accept=".csv">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="col-md-4">
+        <!-- Enhanced Search -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Search Inventory</h5>
+                <div class="search-form mb-3">
+                    <div class="form-group mb-3">
+                        <label class="form-label">Search by ID or Name</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="searchInput" 
+                                   placeholder="Enter Item ID or Name..." 
+                                   oninput="handleSearch(this.value)">
+                            <button class="btn btn-primary" type="button" onclick="performSearch()">
+                                <i class="fas fa-search"></i> Search
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="searchType" 
+                               id="searchById" value="id" checked>
+                        <label class="form-check-label" for="searchById">Search by ID</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="searchType" 
+                               id="searchByName" value="name">
+                        <label class="form-check-label" for="searchByName">Search by Name</label>
+                    </div>
+                </div>
+                
+                <!-- Search Results with Enhanced UI -->
+                <div id="searchResults" class="search-results">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Retrieval Instructions Panel -->
+        <div class="card mb-4" id="retrievalInstructionsPanel" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">Retrieval Instructions</h5>
+                <div id="retrievalSteps" class="retrieval-steps">
+                    <!-- Steps will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Item Details Panel -->
+        <div class="card mb-4" id="itemDetailsPanel" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">Item Details</h5>
+                <div id="itemDetails" class="item-details">
+                    <!-- Item details will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Export -->
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Export Arrangement</h5>
+                <button class="btn btn-primary w-100" onclick="exportArrangement()">
+                    <i class="fas fa-file-export"></i> Export to CSV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Item Details Modal -->
+<div class="modal fade" id="itemDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Item Details & Retrieval Plan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="item-info">
+                            <!-- Item details will be populated here -->
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="retrieval-plan">
+                            <!-- Retrieval steps will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="confirmRetrieval()">
+                    Confirm Retrieval
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Container Selection Modal -->
+<div class="modal fade" id="newContainerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select New Container</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newContainerForm">
+                    <div class="mb-3">
+                        <label class="form-label">Container</label>
+                        <select class="form-select" id="newContainerId" required>
+                            <!-- Containers will be populated here -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Position (Optional)</label>
+                        <div class="row">
+                            <div class="col">
+                                <input type="number" class="form-control" id="posX" placeholder="X">
+                            </div>
+                            <div class="col">
+                                <input type="number" class="form-control" id="posY" placeholder="Y">
+                            </div>
+                            <div class="col">
+                                <input type="number" class="form-control" id="posZ" placeholder="Z">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitNewContainer()">
+                    Confirm Placement
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Three.js Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+function showItemTooltip(item) {
+    const modal = document.getElementById('itemDetailsModal');
+    const modalBody = modal.querySelector('.modal-body');
+    
+    modalBody.innerHTML = `
+        <div class="item-details">
+            <h6>${item.name}</h6>
+            <p><strong>ID:</strong> ${item.itemId}</p>
+            <p><strong>Priority:</strong> ${item.priority}</p>
+            <p><strong>Dimensions:</strong> ${item.width}x${item.depth}x${item.height}</p>
+            <p><strong>Mass:</strong> ${item.mass}kg</p>
+            <p><strong>Expiry Date:</strong> ${item.expiryDate ? formatDate(item.expiryDate) : 'N/A'}</p>
+            <p><strong>Uses Remaining:</strong> ${item.usesRemaining || 'N/A'}</p>
+            <p><strong>Preferred Zone:</strong> ${item.preferredZone}</p>
+        </div>
+    `;
+    
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// Initialize container grid layout
+document.addEventListener('DOMContentLoaded', () => {
+    const containerGrid = document.querySelector('.container-grid');
+    if (containerGrid) {
+        new Masonry(containerGrid, {
+            itemSelector: '.card',
+            columnWidth: '.card',
+            gutter: 20
+        });
+    }
+});
+
+function exportArrangement() {
+    axios.get('/api/export/arrangement')
+        .then(response => {
+            // Create blob and download link
+            const blob = new Blob([response.data.content], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'arrangement_' + new Date().toISOString().split('T')[0] + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            showAlert('Arrangement exported successfully');
+        })
+        .catch(error => showAlert(error.message, 'danger'));
+}
+
+// Initialize file input click handlers
+document.querySelectorAll('.drag-drop-zone').forEach(zone => {
+    const input = zone.querySelector('input[type="file"]');
+    zone.addEventListener('click', () => input.click());
+    input.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0], zone.dataset.endpoint);
+        }
+    });
+});
+
+// Debounced search handler
+let searchTimeout;
+function handleSearch(value) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => performSearch(), 300);
+}
+
+async function performSearch() {
+    const searchInput = document.getElementById('searchInput');
+    const searchType = document.querySelector('input[name="searchType"]:checked').value;
+    const searchResults = document.getElementById('searchResults');
+    
+    if (!searchInput.value.trim()) {
+        searchResults.innerHTML = '';
+        return;
+    }
+
+    try {
+        const response = await axios.get(`/api/search`, {
+            params: {
+                [searchType === 'id' ? 'itemId' : 'itemName']: searchInput.value.trim()
+            }
+        });
+
+        if (response.data.found) {
+            displaySearchResults(response.data);
+        } else {
+            searchResults.innerHTML = `
+                <div class="alert alert-warning">
+                    No items found matching your search.
+                </div>
+            `;
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+function displaySearchResults(data) {
+    const searchResults = document.getElementById('searchResults');
+    const item = data.item;
+    
+    // Display item details
+    searchResults.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h5 class="card-title">${item.name}</h5>
+                        <h6 class="card-subtitle mb-2 text-muted">ID: ${item.itemId}</h6>
+                    </div>
+                    <span class="badge bg-${getPriorityBadgeColor(item.priority)}">
+                        Priority: ${item.priority}
+                    </span>
+                </div>
+                
+                <div class="item-details mt-3">
+                    <p><strong>Location:</strong> ${item.containerId || 'Not placed'}</p>
+                    <p><strong>Zone:</strong> ${item.zone || 'N/A'}</p>
+                    <p><strong>Status:</strong> ${getItemStatus(item)}</p>
+                    
+                    <div class="progress mb-2" style="height: 20px;">
+                        <div class="progress-bar ${getUsageProgressBarClass(item)}" 
+                             role="progressbar" 
+                             style="width: ${calculateUsagePercentage(item)}%">
+                            ${item.usesRemaining}/${item.usageLimit} uses remaining
+                        </div>
+                    </div>
+
+                    ${getExpiryDisplay(item)}
+                </div>
+
+                <div class="retrieval-section mt-3">
+                    <h6>Retrieval Plan</h6>
+                    ${generateRetrievalSteps(data.retrievalSteps)}
+                </div>
+
+                <div class="action-buttons mt-3">
+                    <button class="btn btn-primary" onclick="initiateRetrieval('${item.itemId}')">
+                        <i class="fas fa-box"></i> Retrieve Item
+                    </button>
+                    <button class="btn btn-info" onclick="showItemDetails('${item.itemId}')">
+                        <i class="fas fa-info-circle"></i> Full Details
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function generateRetrievalSteps(steps) {
+    if (!steps || steps.length === 0) {
+        return '<p class="text-muted">No steps needed - item is directly accessible.</p>';
+    }
+
+    return `
+        <div class="retrieval-steps">
+            <ol class="list-group list-group-numbered">
+                ${steps.map(step => `
+                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                        <div class="ms-2 me-auto">
+                            <div class="fw-bold">${step.action}</div>
+                            ${step.itemName}
+                        </div>
+                        ${step.action === 'move' ? `
+                            <span class="badge bg-primary rounded-pill">
+                                ${step.fromContainer} → ${step.toContainer}
+                            </span>
+                        ` : ''}
+                    </li>
+                `).join('')}
+            </ol>
+        </div>
+    `;
+}
+
+function getPriorityBadgeColor(priority) {
+    if (priority >= 90) return 'danger';
+    if (priority >= 70) return 'warning';
+    return 'success';
+}
+
+function getItemStatus(item) {
+    if (item.isWaste) return 'Waste';
+    if (item.usesRemaining === 0) return 'Depleted';
+    if (isExpired(item)) return 'Expired';
+    return 'Active';
+}
+
+function getUsageProgressBarClass(item) {
+    if (!item.usageLimit) return 'bg-info';
+    const percentage = (item.usesRemaining / item.usageLimit) * 100;
+    if (percentage <= 20) return 'bg-danger';
+    if (percentage <= 50) return 'bg-warning';
+    return 'bg-success';
+}
+
+function calculateUsagePercentage(item) {
+    if (!item.usageLimit) return 100;
+    return (item.usesRemaining / item.usageLimit) * 100;
+}
+
+function getExpiryDisplay(item) {
+    if (!item.expiryDate) return '';
+    
+    const expiryDate = new Date(item.expiryDate);
+    const now = new Date();
+    const daysUntilExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+    
+    let alertClass = 'success';
+    if (daysUntilExpiry <= 0) alertClass = 'danger';
+    else if (daysUntilExpiry <= 30) alertClass = 'warning';
+    
+    return `
+        <div class="alert alert-${alertClass} mb-0">
+            <i class="fas fa-clock"></i>
+            ${daysUntilExpiry <= 0 ? 'Expired' : 
+              `Expires in ${daysUntilExpiry} days`} 
+            (${expiryDate.toLocaleDateString()})
+        </div>
+    `;
+}
+
+function isExpired(item) {
+    if (!item.expiryDate) return false;
+    return new Date(item.expiryDate) <= new Date();
+}
+
+async function initiateRetrieval(itemId) {
+    try {
+        const response = await axios.post('/api/retrieval/initiate', { itemId });
+        if (response.data.success) {
+            showRetrievalModal(response.data);
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+function showRetrievalModal(data) {
+    const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
+    const modalBody = document.querySelector('#itemDetailsModal .modal-body');
+    
+    modalBody.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Item Details</h6>
+                <div class="item-info">
+                    <p><strong>ID:</strong> ${data.item.itemId}</p>
+                    <p><strong>Name:</strong> ${data.item.name}</p>
+                    <p><strong>Location:</strong> ${data.item.containerId}</p>
+                    <p><strong>Priority:</strong> ${data.item.priority}</p>
+                    ${data.item.expiryDate ? 
+                        `<p><strong>Expires:</strong> ${new Date(data.item.expiryDate).toLocaleDateString()}</p>` : ''}
+                    ${data.item.usageLimit ? 
+                        `<p><strong>Uses Remaining:</strong> ${data.item.usesRemaining}/${data.item.usageLimit}</p>` : ''}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6>Retrieval Steps</h6>
+                ${generateRetrievalSteps(data.retrievalSteps)}
+            </div>
+        </div>
+    `;
+    
+    modal.show();
+}
+
+async function confirmRetrieval() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('itemDetailsModal'));
+    try {
+        const response = await axios.post('/api/retrieval/confirm');
+        if (response.data.success) {
+            modal.hide();
+            showNewContainerModal();
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+function showNewContainerModal() {
+    // Populate containers dropdown first
+    loadContainers().then(() => {
+        const modal = new bootstrap.Modal(document.getElementById('newContainerModal'));
+        modal.show();
+    });
+}
+
+async function loadContainers() {
+    try {
+        const response = await axios.get('/api/containers');
+        const select = document.getElementById('newContainerId');
+        select.innerHTML = response.data.map(container => `
+            <option value="${container.id}">
+                ${container.id} - ${container.zone} 
+                (${container.width}x${container.depth}x${container.height})
+            </option>
+        `).join('');
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+
+async function submitNewContainer() {
+    const containerId = document.getElementById('newContainerId').value;
+    const position = {
+        x: document.getElementById('posX').value || 0,
+        y: document.getElementById('posY').value || 0,
+        z: document.getElementById('posZ').value || 0
+    };
+
+    try {
+        const response = await axios.post('/api/placement/update', {
+            containerId,
+            position
+        });
+
+        if (response.data.success) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('newContainerModal'));
+            modal.hide();
+            showAlert('Item placed successfully');
+            performSearch(); // Refresh search results
+        }
+    } catch (error) {
+        showAlert(error.message, 'danger');
+    }
+}
+</script>
+{% endblock %}
