@@ -371,11 +371,6 @@ function generateRetrievalSteps(steps) {
                             <div class="fw-bold">${step.action}</div>
                             ${step.itemName}
                         </div>
-                        ${step.action === 'move' ? `
-                            <span class="badge bg-primary rounded-pill">
-                                ${step.fromContainer} → ${step.toContainer}
-                            </span>
-                        ` : ''}
                     </li>
                 `).join('')}
             </ol>
@@ -450,8 +445,17 @@ function showRetrievalModal(data) {
     const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
     const modalBody = document.querySelector('#itemDetailsModal .modal-body');
     
+    // Add verification status alert if needed
+    const verificationAlert = !data.item.arrangementVerified ? `
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Warning:</strong> ${data.item.verificationMessage || 'Current item position does not match expected arrangement'}
+        </div>
+    ` : '';
+
     modalBody.innerHTML = `
         <div class="row">
+            ${verificationAlert}
             <div class="col-md-6">
                 <h6>Item Details</h6>
                 <div class="item-info">
@@ -472,19 +476,34 @@ function showRetrievalModal(data) {
         </div>
     `;
     
+    // Store the item ID for the confirmation step
+    modalBody.dataset.itemId = data.item.itemId;
+    
     modal.show();
 }
 
 async function confirmRetrieval() {
     const modal = bootstrap.Modal.getInstance(document.getElementById('itemDetailsModal'));
+    const modalBody = document.querySelector('#itemDetailsModal .modal-body');
+    const itemId = modalBody.dataset.itemId;
+
     try {
-        const response = await axios.post('/api/retrieval/confirm');
+        const response = await axios.post('/api/retrieve', {  // Changed to /api/retrieve
+            itemId: itemId,
+            userId: 'system',  // Replace with actual user ID when authentication is implemented
+            timestamp: new Date().toISOString()  // Current timestamp in ISO format
+        });
+
         if (response.data.success) {
             modal.hide();
-            showNewContainerModal();
+            showAlert('Item retrieved successfully', 'success');
+            // Refresh the search results or container view if needed
+            if (typeof performSearch === 'function') {
+                performSearch();
+            }
         }
     } catch (error) {
-        showAlert(error.message, 'danger');
+        showAlert(error.response?.data?.detail?.message || error.message, 'danger');
     }
 }
 

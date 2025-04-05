@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..models import Item, Container
@@ -20,6 +20,8 @@ class SearchService:
         item_name: Optional[str] = None
     ) -> Dict[str, Any]:
         query = db.query(Item)
+        search_result = None
+        
         if item_id:
             # Check if item exists before filtering
             all_items = query.all()
@@ -27,19 +29,26 @@ class SearchService:
             
             query = query.filter(Item.itemId == str(item_id))
             logger.info(f"Searching for item with ID: {item_id}")
-            item = query.first()
-            logger.info(f"Found item: {item.itemId if item else None}")
+            search_result = query.first()
+            logger.info(f"Found item: {search_result.itemId if search_result else None}")
         elif item_name:
-            item = query.filter(Item.name == item_name).first()
-        else:
-            return {
-                "success": True,
-                "found": False,
-                "totalItems": db.query(func.count(Item.itemId)).scalar() or 0,
-                "activeItems": db.query(func.count(Item.itemId)).filter(Item.is_waste == False).scalar() or 0
-            }
+            search_result = query.filter(Item.name == item_name).first()
 
-        if not item:
+        # Log the search activity
+        self.logging_service.add_log(
+            db=db,
+            user_id="system",  # Replace with actual user ID when authentication is implemented
+            action_type="search",
+            item_id=search_result.itemId if search_result else None,
+            details={
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "searchType": "id" if item_id else "name",
+                "searchTerm": item_id or item_name,
+                "found": bool(search_result)
+            }
+        )
+
+        if not search_result:
             return {
                 "success": True,
                 "found": False,
@@ -49,24 +58,42 @@ class SearchService:
 
         # Generate item details
         item_details = {
-            "itemId": str(item.itemId),
-            "name": item.name,
-            "containerId": item.container_id,
-            "width": item.width,
-            "depth": item.depth,
-            "height": item.height,
-            "mass": item.mass,
-            "priority": item.priority,
-            "expiryDate": item.expiry_date.isoformat() if item.expiry_date else None,
-            "usageLimit": item.usage_limit,
-            "usesRemaining": item.uses_remaining,
-            "preferredZone": item.preferred_zone,
-            "zone": item.container.zone if item.container else None,
-            "position": item.position
+            "itemId": str(search_result.itemId),
+            "name": search_result.name,
+            "containerId": search_result.container_id,
+            "width": search_result.width,
+            "depth": search_result.depth,
+            "height": search_result.height,
+            "mass": search_result.mass,
+            "priority": search_result.priority,
+            "expiryDate": search_result.expiry_date.isoformat() if search_result.expiry_date else None,
+            "usageLimit": search_result.usage_limit,
+            "usesRemaining": search_result.uses_remaining,
+            "preferredZone": search_result.preferred_zone,
+            "zone": search_result.container.zone if search_result.container else None,
+            "position": search_result.position,
+            "isWaste": search_result.is_waste  # Include waste status
         }
 
+        # Determine status for waste items
+        if search_result.is_waste:
+            # Convert expiry_date to timezone-aware if needed
+            if search_result.expiry_date and search_result.expiry_date.tzinfo is None:
+                expiry_date = search_result.expiry_date.replace(tzinfo=timezone.utc)
+            else:
+                expiry_date = search_result.expiry_date
+
+            if search_result.uses_remaining == 0:
+                item_details["status"] = "Used"
+            elif expiry_date and expiry_date <= datetime.now(timezone.utc):
+                item_details["status"] = "Expired"
+            else:
+                item_details["status"] = "Waste"
+        else:
+            item_details["status"] = "Active"
+
         # Calculate retrieval steps
-        retrieval_steps = self._calculate_retrieval_steps(db, item)
+        retrieval_steps = self._calculate_retrieval_steps(db, search_result)
 
         return {
             "success": True,
@@ -131,45 +158,45 @@ class SearchService:
         db: Session,
         target_item: Item
     ) -> List[Item]:
-        blocking_items = []
-        if not target_item.container_id or not target_item.position:
-            return blocking_items
+        """Find items that need to be moved to retrieve the target item"""
+        if not target_item.position or not target_item.container_id:
+            return []
 
         # Get all items in the same container
+        blocking_items = []
         container_items = db.query(Item).filter(
             Item.container_id == target_item.container_id,
             Item.itemId != target_item.itemId,
-            Item.is_waste == False  # Ignore waste items
+            Item.is_waste == False  # Exclude waste items
         ).all()
 
-        target_pos = target_item.position
-        target_start = target_pos["startCoordinates"]
-        target_end = target_pos["endCoordinates"]
-
-        # Check items that block perpendicular access path
+        target_position = target_item.position
+        target_front_access = float(target_position["startCoordinates"]["depth"])
+        
         for item in container_items:
             if not item.position:
                 continue
 
-            item_pos = item.position
-            item_start = item_pos["startCoordinates"]
-            item_end = item_pos["endCoordinates"]
+            item_position = item.position
+            item_depth = float(item_position["startCoordinates"]["depth"])
+            
+            # Check if item is in front of target item
+            if item_depth < target_front_access:
+                # Check if there's overlap in width and height
+                width_overlap = (
+                    float(item_position["endCoordinates"]["width"]) > float(target_position["startCoordinates"]["width"]) and
+                    float(item_position["startCoordinates"]["width"]) < float(target_position["endCoordinates"]["width"])
+                )
+                height_overlap = (
+                    float(item_position["endCoordinates"]["height"]) > float(target_position["startCoordinates"]["height"]) and
+                    float(target_position["startCoordinates"]["height"]) < float(target_position["endCoordinates"]["height"])
+                )
+                
+                if width_overlap and height_overlap:
+                    blocking_items.append(item)
 
-            # Check if item blocks perpendicular access path
-            # An item blocks if it overlaps with the target item's projection to the container opening
-            if (item_start["depth"] < target_start["depth"] and  # Item is closer to opening
-                self._check_perpendicular_overlap(
-                    target_start, target_end,
-                    item_start, item_end
-                )):
-                blocking_items.append(item)
-
-        # Sort by distance from opening (closest first) and priority (lower priority first)
-        blocking_items.sort(key=lambda x: (
-            x.position["startCoordinates"]["depth"],
-            x.priority
-        ))
-
+        # Sort blocking items by their depth (front to back)
+        blocking_items.sort(key=lambda x: float(x.position["startCoordinates"]["depth"]))
         return blocking_items
 
     def _check_perpendicular_overlap(

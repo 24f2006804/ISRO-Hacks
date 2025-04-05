@@ -42,38 +42,56 @@ class SimulationService:
 
             # Calculate total uses (one use per day)
             total_uses = request.num_of_days
-
             if item.usage_limit is not None and item.uses_remaining is not None:
                 old_uses = item.uses_remaining
                 item.uses_remaining = max(0, old_uses - total_uses)
 
+                # Record usage in changes
                 changes["itemsUsedToday"].append({
                     "itemId": item.id,
                     "name": item.name,
-                    "remainingUses": item.uses_remaining
+                    "remainingUses": item.uses_remaining,
+                    "usesConsumed": min(total_uses, old_uses)  # Don't report more uses than available
                 })
 
-                # Check if item is depleted
+                # Check if item was depleted during simulation
                 if item.uses_remaining == 0 and old_uses > 0:
                     changes["itemsDepletedToday"].append({
                         "itemId": item.id,
-                        "name": item.name
+                        "name": item.name,
+                        "depleted_at": (current_date + timedelta(days=old_uses)).isoformat()
                     })
                     item.is_waste = True
 
-                # Log usage simulation
-                self.logging_service.add_log(
-                    db=db,
-                    user_id="simulation",
-                    action_type="retrieval",
-                    item_id=item.id,
-                    details={
-                        "simulatedDays": request.num_of_days,
-                        "usesConsumed": total_uses,
-                        "oldUsesRemaining": old_uses,
-                        "newUsesRemaining": item.uses_remaining
-                    }
-                )
+                    # Log depletion
+                    self.logging_service.add_log(
+                        db=db,
+                        user_id="simulation",
+                        action_type="disposal",
+                        item_id=item.id,
+                        details={
+                            "reason": "Out of Uses",
+                            "simulatedDate": target_date.isoformat(),
+                            "originalUses": old_uses,
+                            "depleted_at": (current_date + timedelta(days=old_uses)).isoformat()
+                        }
+                    )
+
+                # Log each day's usage separately
+                for day in range(min(total_uses, old_uses)):
+                    usage_date = current_date + timedelta(days=day)
+                    self.logging_service.add_log(
+                        db=db,
+                        user_id="simulation",
+                        action_type="retrieval",
+                        item_id=item.id,
+                        details={
+                            "simulatedDate": usage_date.isoformat(),
+                            "oldUsesRemaining": old_uses - day,
+                            "newUsesRemaining": old_uses - day - 1,
+                            "simulated": True
+                        }
+                    )
 
         # Check for expired items
         expired_items = db.query(Item).filter(
@@ -84,7 +102,8 @@ class SimulationService:
         for item in expired_items:
             changes["itemsExpiredToday"].append({
                 "itemId": item.id,
-                "name": item.name
+                "name": item.name,
+                "expiryDate": item.expiry_date.isoformat()
             })
             item.is_waste = True
 

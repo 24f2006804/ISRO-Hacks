@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 from io import StringIO
 from sqlalchemy.orm import Session
 from ..models import Item, Container
@@ -32,10 +32,22 @@ class CSVHandler:
                         raw_id = str(row['Item ID']).strip()
                         item_id = raw_id if raw_id.startswith('0') else raw_id.zfill(3)
 
-                        # Convert expiry date string to datetime
+                        # Convert expiry date string to timezone-aware datetime
                         expiry_date = None
                         if pd.notna(row['Expiry Date']):
-                            expiry_date = datetime.fromisoformat(row['Expiry Date']).replace(tzinfo=timezone.utc)
+                            try:
+                                # Try parsing as ISO format first
+                                expiry_date = datetime.fromisoformat(row['Expiry Date'])
+                            except ValueError:
+                                # Fall back to parsing common date formats
+                                expiry_date = datetime.strptime(str(row['Expiry Date']), '%Y-%m-%d')
+                            
+                            # Ensure timezone awareness
+                            if expiry_date.tzinfo is None:
+                                expiry_date = expiry_date.replace(
+                                    hour=23, minute=59, second=59,  # Set to end of day
+                                    tzinfo=timezone.utc
+                                )
 
                         # Create new item
                         item = Item(
@@ -161,6 +173,48 @@ class CSVHandler:
                 "containersImported": 0,
                 "errors": [{"message": f"File processing error: {str(e)}"}]
             }
+
+    @staticmethod
+    def verify_arrangement(item_id: str, container_id: str, position: dict) -> Tuple[bool, Optional[str]]:
+        """Verify if an item's position matches the arrangement in the CSV file"""
+        try:
+            with open("/home/agnij/Downloads/arrangement_2025-04-04.csv", "r") as f:
+                lines = f.readlines()[1:]  # Skip header
+                for line in lines:
+                    csv_item_id, csv_container_id, coords = line.strip().split(",")
+                    if csv_item_id == item_id:
+                        # Remove quotes and parentheses from coordinates
+                        coords = coords.strip('"()')
+                        try:
+                            start_coords, end_coords = coords.split("),(")
+                            csv_start = tuple(map(float, start_coords.split(",")))
+                            csv_end = tuple(map(float, end_coords.split(",")))
+                            
+                            # Check container match
+                            if csv_container_id != container_id:
+                                return False, f"Container mismatch: expected {csv_container_id}, found {container_id}"
+                            
+                            # Check coordinate matches with tolerance
+                            tolerance = 0.1
+                            if (abs(float(position["startCoordinates"]["width"]) - csv_start[0]) > tolerance or
+                                abs(float(position["startCoordinates"]["depth"]) - csv_start[1]) > tolerance or
+                                abs(float(position["startCoordinates"]["height"]) - csv_start[2]) > tolerance or
+                                abs(float(position["endCoordinates"]["width"]) - csv_end[0]) > tolerance or
+                                abs(float(position["endCoordinates"]["depth"]) - csv_end[1]) > tolerance or
+                                abs(float(position["endCoordinates"]["height"]) - csv_end[2]) > tolerance):
+                                return False, "Position coordinates do not match expected values"
+                            
+                            return True, None
+                        except (ValueError, IndexError) as e:
+                            return False, f"Invalid coordinate format in CSV: {str(e)}"
+                        
+                return False, f"Item {item_id} not found in arrangement CSV"
+            
+        except FileNotFoundError:
+            return False, "Arrangement CSV file not found"
+        except Exception as e:
+            logger.error(f"Error verifying arrangement: {str(e)}")
+            return False, f"Error verifying arrangement: {str(e)}"
 
     @staticmethod
     def export_arrangement(db: Session) -> str:

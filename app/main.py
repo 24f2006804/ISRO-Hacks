@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import datetime, timezone
 from typing import List, Optional
 import logging
+import traceback
 from sqlalchemy.orm import Session
 from .schemas import (
     PlacementRequest, PlacementResponse,
@@ -408,3 +409,181 @@ async def optimize_placement(db: Session = Depends(get_db)):
             "success": False, 
             "message": f"Placement optimization failed: {str(e)}"
         }
+
+def _find_blocking_items(
+        self,
+        db: Session,
+        target_item: Item
+    ) -> List[Item]:
+        """Find items that need to be moved to retrieve the target item"""
+        if not target_item.position or not target_item.container_id:
+            return []
+
+        blocking_items = []
+        container_items = db.query(Item).filter(
+            Item.container_id == target_item.container_id,
+            Item.itemId != target_item.itemId
+        ).all()
+
+        for item in container_items:
+            if not item.position:
+                continue
+
+            # Check if this item blocks access to target item
+            if self._blocks_access(item, target_item):
+                blocking_items.append(item)
+
+        return blocking_items
+
+@app.post("/api/retrieval/initiate")
+async def initiate_retrieval(
+    itemId: str,
+    db: Session = Depends(get_db)
+):
+    """Initiate the retrieval process for an item"""
+    try:
+        # Find the item
+        item = db.query(Item).filter(Item.itemId == itemId).first()
+        if not item:
+            raise HTTPException(
+                status_code=404,
+                detail={"message": f"Item {itemId} not found"}
+            )
+
+        # Calculate retrieval steps
+        retrieval_steps = search_service._calculate_retrieval_steps(db, item)
+
+        # Verify arrangement against CSV file if item is placed
+        arrangement_verified = False
+        verification_message = None
+        if item.container_id and item.position:
+            arrangement_verified, verification_message = CSVHandler.verify_arrangement(
+                item.itemId,
+                item.container_id,
+                item.position
+            )
+
+        # Log the retrieval initiation with verification status
+        logging_service.add_log(
+            db=db,
+            user_id="system",  # Or get from auth context if available
+            action_type="retrieval_initiated",
+            item_id=itemId,
+            details={
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "containerId": item.container_id,
+                "position": item.position,
+                "steps": len(retrieval_steps),
+                "arrangementVerified": arrangement_verified,
+                "verificationMessage": verification_message
+            }
+        )
+
+        # Format response
+        item_data = {
+            "itemId": item.itemId,
+            "name": item.name,
+            "containerId": item.container_id,
+            "position": item.position,
+            "priority": item.priority,
+            "expiryDate": item.expiry_date.isoformat() if item.expiry_date else None,
+            "usageLimit": item.usage_limit,
+            "usesRemaining": item.uses_remaining,
+            "preferredZone": item.preferred_zone,
+            "arrangementVerified": arrangement_verified,
+            "verificationMessage": verification_message
+        }
+
+        # If arrangement verification failed, include warning in response
+        response = {
+            "success": True,
+            "item": item_data,
+            "retrievalSteps": retrieval_steps,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+        if not arrangement_verified:
+            response["warning"] = "Current item position does not match expected arrangement"
+            response["details"] = verification_message
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error initiating retrieval: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Error initiating retrieval: {str(e)}"}
+        )
+
+@app.post("/api/retrieval/confirm")
+async def confirm_retrieval(
+    itemId: str,
+    userId: str,
+    db: Session = Depends(get_db)
+):
+    """Confirm and execute the retrieval of an item"""
+    try:
+        # Find the item
+        item = db.query(Item).filter(Item.itemId == itemId).first()
+        if not item:
+            raise HTTPException(
+                status_code=404,
+                detail={"message": f"Item {itemId} not found"}
+            )
+
+        # Get current timestamp
+        timestamp = datetime.now(timezone.utc)
+
+        # Log the retrieval
+        success = search_service.log_retrieval(
+            db,
+            itemId,
+            userId,
+            timestamp
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail={"message": "Failed to log retrieval"}
+            )
+
+        # Update item state
+        old_container = item.container_id
+        old_position = item.position
+
+        # Clear container and position
+        item.container_id = None
+        item.position = None
+
+        # Add detailed log entry
+        logging_service.add_log(
+            db=db,
+            user_id=userId,
+            action_type="retrieval_completed",
+            item_id=itemId,
+            details={
+                "timestamp": timestamp.isoformat(),
+                "previousContainer": old_container,
+                "previousPosition": old_position,
+                "usageLimit": item.usage_limit,
+                "usesRemaining": item.uses_remaining,
+                "isWaste": item.is_waste
+            }
+        )
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Item retrieved successfully",
+            "timestamp": timestamp.isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error confirming retrieval: {traceback.format_exc()}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Error confirming retrieval: {str(e)}"}
+        )
