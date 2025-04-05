@@ -7,6 +7,11 @@
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Masonry -->
+    <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
     <!-- Custom CSS -->
     <link href="{{ url_for('static', path='/css/main.css') }}" rel="stylesheet">
 </head>
@@ -47,5 +52,20 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="{{ url_for('static', path='/js/main.js') }}"></script>
     {% block scripts %}{% endblock %}
+
+    <!-- Initialize Masonry layouts -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const grids = document.querySelectorAll('.container-grid');
+        grids.forEach(grid => {
+            new Masonry(grid, {
+                itemSelector: '.card',
+                columnWidth: '.card',
+                gutter: 20,
+                transitionDuration: '0.3s'
+            });
+        });
+    });
+    </script>
 </body>
 </html>

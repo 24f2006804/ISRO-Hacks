@@ -20,33 +20,26 @@ class CSVHandler:
             items_imported = 0
             errors = []
 
-            # Handle transaction manually
             try:
                 # Clear existing items
                 count = db.query(Item).delete()
                 logger.info(f"Deleted {count} existing items")
                 db.flush()
-                
-                # Debug: Check session state
-                logger.info(f"Session dirty after delete: {db.dirty}")
-                logger.info(f"Session new after delete: {db.new}")
 
                 for index, row in df.iterrows():
                     try:
+                        # Format item ID to ensure 3-digit format
+                        raw_id = str(row['Item ID']).strip()
+                        item_id = raw_id if raw_id.startswith('0') else raw_id.zfill(3)
+
                         # Convert expiry date string to datetime
                         expiry_date = None
                         if pd.notna(row['Expiry Date']):
                             expiry_date = datetime.fromisoformat(row['Expiry Date']).replace(tzinfo=timezone.utc)
-                            logger.info(f"Parsed expiry date: {expiry_date}")
-
-                        # Preserve original item ID format
-                        item_id = str(row['Item ID']).strip()
-                        if not item_id.startswith('0'):  # If it's not already zero-padded
-                            item_id = item_id.zfill(3)  # Ensure 3-digit format with leading zeros
 
                         # Create new item
                         item = Item(
-                            id=item_id,  # Use properly formatted ID
+                            itemId=item_id,
                             name=str(row['Name']).strip(),
                             width=float(row['Width']),
                             depth=float(row['Depth']),
@@ -59,10 +52,9 @@ class CSVHandler:
                             preferred_zone=str(row['Preferred Zone']).strip(),
                             is_waste=False
                         )
-                        logger.info(f"Created item object: {item.id}, {item.name}")
+                        logger.info(f"Created item with ID: {item_id}")
                         
                         db.add(item)
-                        logger.info(f"Added item to session, session state: new={len(db.new)}, dirty={len(db.dirty)}")
                         db.flush()
                         items_imported += 1
 
@@ -74,17 +66,8 @@ class CSVHandler:
                         })
                         continue
 
-                # Verify items before commit
-                pending_items = db.query(Item).all()
-                logger.info(f"Items in session before commit: {[(i.id, i.name) for i in pending_items]}")
-                
-                # Commit transaction
                 db.commit()
-                logger.info(f"Committed transaction, imported {items_imported} items")
-                
-                # Verify after commit
-                final_items = db.query(Item).all()
-                logger.info(f"Items in database after commit: {[(i.id, i.name) for i in final_items]}")
+                logger.info(f"Successfully imported {items_imported} items")
 
                 return {
                     "success": True,
@@ -114,31 +97,35 @@ class CSVHandler:
         try:
             logger.info("Starting container import")
             df = pd.read_csv(StringIO(file_content.decode()))
-            logger.info(f"Read CSV with columns: {df.columns.tolist()}")
-            logger.info(f"First row: {df.iloc[0].to_dict()}")
             
             containers_imported = 0
             errors = []
 
-            # Handle transaction manually
             try:
                 # Clear existing containers
                 db.query(Container).delete()
-                db.flush()  # Ensure deletion is processed
+                db.flush()
 
                 for index, row in df.iterrows():
                     try:
+                        # Format container ID (cont + uppercase letter)
+                        raw_id = str(row['Container ID']).strip()
+                        if not raw_id.startswith('cont'):
+                            container_id = f"cont{chr(65 + containers_imported)}"  # A, B, C, etc.
+                        else:
+                            container_id = raw_id
+
                         container = Container(
-                            id=str(row['Container ID']),
+                            id=container_id,
                             zone=row['Zone'],
                             width=float(row['Width']),
                             depth=float(row['Depth']),
                             height=float(row['Height'])
                         )
-                        logger.info(f"Created container: id={container.id}, zone={container.zone}")
+                        logger.info(f"Created container: {container_id}")
                         
                         db.add(container)
-                        db.flush()  # Ensure container is processed
+                        db.flush()
                         containers_imported += 1
 
                     except Exception as e:
@@ -147,9 +134,8 @@ class CSVHandler:
                             "row": index + 1,
                             "message": str(e)
                         })
-                        continue  # Continue with next row
+                        continue
 
-                # Commit all changes
                 db.commit()
                 logger.info(f"Successfully imported {containers_imported} containers")
 

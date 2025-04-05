@@ -1,6 +1,9 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Use in-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///./space_station.db"
@@ -22,5 +25,17 @@ def get_db() -> Session:
         db.close()
 
 def init_db():
-    from ..models import Base
-    Base.metadata.create_all(bind=engine)
+    from ..models import Base, Item, Container
+    inspector = inspect(engine)
+    
+    # Get existing tables
+    existing_tables = inspector.get_table_names()
+    logger.info(f"Existing tables: {existing_tables}")
+    
+    # Create tables if they don't exist
+    if not all(table in existing_tables for table in ['items', 'containers', 'logs']):
+        logger.info("Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    else:
+        logger.info("All required tables already exist")

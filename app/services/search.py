@@ -14,7 +14,7 @@ class SearchService:
         self.logging_service = LoggingService()
 
     def search_item(
-        self,  # Add self parameter
+        self,
         db: Session,
         item_id: Optional[str] = None,
         item_name: Optional[str] = None
@@ -23,33 +23,33 @@ class SearchService:
         if item_id:
             # Check if item exists before filtering
             all_items = query.all()
-            logger.info(f"All items in db: {[(item.id, item.name) for item in all_items]}")
+            logger.info(f"All items in db: {[(item.itemId, item.name) for item in all_items]}")
             
-            query = query.filter(Item.id == str(item_id))
+            query = query.filter(Item.itemId == str(item_id))
             logger.info(f"Searching for item with ID: {item_id}")
             item = query.first()
-            logger.info(f"Found item: {item.id if item else None}")
+            logger.info(f"Found item: {item.itemId if item else None}")
         elif item_name:
             item = query.filter(Item.name == item_name).first()
         else:
             return {
                 "success": True,
                 "found": False,
-                "totalItems": db.query(func.count(Item.id)).scalar() or 0,
-                "activeItems": db.query(func.count(Item.id)).filter(Item.is_waste == False).scalar() or 0
+                "totalItems": db.query(func.count(Item.itemId)).scalar() or 0,
+                "activeItems": db.query(func.count(Item.itemId)).filter(Item.is_waste == False).scalar() or 0
             }
 
         if not item:
             return {
                 "success": True,
                 "found": False,
-                "totalItems": db.query(func.count(Item.id)).scalar() or 0,
-                "activeItems": db.query(func.count(Item.id)).filter(Item.is_waste == False).scalar() or 0
+                "totalItems": db.query(func.count(Item.itemId)).scalar() or 0,
+                "activeItems": db.query(func.count(Item.itemId)).filter(Item.is_waste == False).scalar() or 0
             }
 
         # Generate item details
         item_details = {
-            "itemId": str(item.id),
+            "itemId": str(item.itemId),
             "name": item.name,
             "containerId": item.container_id,
             "width": item.width,
@@ -73,8 +73,8 @@ class SearchService:
             "found": True,
             "item": item_details,
             "retrievalSteps": retrieval_steps,
-            "totalItems": db.query(func.count(Item.id)).scalar() or 0,
-            "activeItems": db.query(func.count(Item.id)).filter(Item.is_waste == False).scalar() or 0
+            "totalItems": db.query(func.count(Item.itemId)).scalar() or 0,
+            "activeItems": db.query(func.count(Item.itemId)).filter(Item.is_waste == False).scalar() or 0
         }
 
     def _calculate_retrieval_steps(
@@ -85,11 +85,14 @@ class SearchService:
         steps = []
         step_counter = 1
 
-        if not target_item.position:
+        if not target_item.position or not target_item.container_id:
             return steps
 
-        # Find items that need to be moved to access the target item
+        # Find items blocking direct perpendicular access
         blocking_items = self._find_blocking_items(db, target_item)
+        
+        # Sort blocking items by priority (lower priority items moved first)
+        blocking_items.sort(key=lambda x: x.priority)
 
         # Generate steps for moving blocking items
         for blocking_item in blocking_items:
@@ -97,16 +100,7 @@ class SearchService:
             steps.append(RetrievalStep(
                 step=step_counter,
                 action="remove",
-                itemId=blocking_item.id,
-                itemName=blocking_item.name
-            ))
-            step_counter += 1
-
-            # Add step to set aside blocking item
-            steps.append(RetrievalStep(
-                step=step_counter,
-                action="setAside",
-                itemId=blocking_item.id,
+                itemId=blocking_item.itemId,
                 itemName=blocking_item.name
             ))
             step_counter += 1
@@ -115,17 +109,17 @@ class SearchService:
         steps.append(RetrievalStep(
             step=step_counter,
             action="retrieve",
-            itemId=target_item.id,
+            itemId=target_item.itemId,
             itemName=target_item.name
         ))
         step_counter += 1
 
-        # Add steps to place back blocking items in reverse order
+        # Add steps to place back blocking items in reverse order (higher priority items placed first)
         for blocking_item in reversed(blocking_items):
             steps.append(RetrievalStep(
                 step=step_counter,
-                action="placeBack",
-                itemId=blocking_item.id,
+                action="place",
+                itemId=blocking_item.itemId,
                 itemName=blocking_item.name
             ))
             step_counter += 1
@@ -144,45 +138,53 @@ class SearchService:
         # Get all items in the same container
         container_items = db.query(Item).filter(
             Item.container_id == target_item.container_id,
-            Item.id != target_item.id
+            Item.itemId != target_item.itemId,
+            Item.is_waste == False  # Ignore waste items
         ).all()
 
         target_pos = target_item.position
-        target_depth = target_pos["startCoordinates"]["depth"]
+        target_start = target_pos["startCoordinates"]
+        target_end = target_pos["endCoordinates"]
 
-        # Find items that block access to the target item
+        # Check items that block perpendicular access path
         for item in container_items:
             if not item.position:
                 continue
 
             item_pos = item.position
-            item_depth = item_pos["startCoordinates"]["depth"]
+            item_start = item_pos["startCoordinates"]
+            item_end = item_pos["endCoordinates"]
 
-            # Check if item is in front of target item
-            if item_depth < target_depth:
-                # Check if item overlaps with target item's access path
-                if self._check_path_overlap(item_pos, target_pos):
-                    blocking_items.append(item)
+            # Check if item blocks perpendicular access path
+            # An item blocks if it overlaps with the target item's projection to the container opening
+            if (item_start["depth"] < target_start["depth"] and  # Item is closer to opening
+                self._check_perpendicular_overlap(
+                    target_start, target_end,
+                    item_start, item_end
+                )):
+                blocking_items.append(item)
 
-        # Sort blocking items by their depth (items closer to the opening first)
-        blocking_items.sort(
-            key=lambda x: x.position["startCoordinates"]["depth"]
-        )
+        # Sort by distance from opening (closest first) and priority (lower priority first)
+        blocking_items.sort(key=lambda x: (
+            x.position["startCoordinates"]["depth"],
+            x.priority
+        ))
 
         return blocking_items
 
-    def _check_path_overlap(
+    def _check_perpendicular_overlap(
         self,
-        item_pos: Dict,
-        target_pos: Dict
+        target_start: Dict,
+        target_end: Dict,
+        item_start: Dict,
+        item_end: Dict
     ) -> bool:
-        """Check if an item blocks the access path to the target item"""
-        # Check if there's any overlap in the width and height dimensions
+        """Check if an item blocks the perpendicular access path of the target item"""
         return not (
-            item_pos["endCoordinates"]["width"] <= target_pos["startCoordinates"]["width"] or
-            item_pos["startCoordinates"]["width"] >= target_pos["endCoordinates"]["width"] or
-            item_pos["endCoordinates"]["height"] <= target_pos["startCoordinates"]["height"] or
-            item_pos["startCoordinates"]["height"] >= target_pos["endCoordinates"]["height"]
+            item_end["width"] <= target_start["width"] or
+            item_start["width"] >= target_end["width"] or
+            item_end["height"] <= target_start["height"] or
+            item_start["height"] >= target_end["height"]
         )
 
     def log_retrieval(
@@ -192,7 +194,7 @@ class SearchService:
         user_id: str,
         timestamp: datetime
     ) -> bool:
-        item = db.query(Item).filter(Item.id == item_id).first()
+        item = db.query(Item).filter(Item.itemId == item_id).first()
         if not item:
             return False
 
@@ -240,7 +242,7 @@ class SearchService:
         position: Dict,
         timestamp: datetime
     ) -> bool:
-        item = db.query(Item).filter(Item.id == item_id).first()
+        item = db.query(Item).filter(Item.itemId == item_id).first()
         if not item:
             return False
 

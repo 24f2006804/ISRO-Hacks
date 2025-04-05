@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -12,29 +12,32 @@ class LoggingService:
         user_id: str,
         action_type: str,
         item_id: str,
-        details: dict = None
+        details: Dict = None
     ) -> bool:
-        # Create log entry with timezone-aware timestamp
-        log = Log(
-            user_id=user_id,
-            action_type=action_type,
-            item_id=str(item_id),  # Ensure string ID
-            details=details,
-            timestamp=datetime.now(timezone.utc)  # Use timezone-aware datetime
-        )
-        db.add(log)
-        db.commit()
-        return True
+        try:
+            log_entry = Log(
+                timestamp=datetime.now(timezone.utc),
+                user_id=user_id,
+                action_type=action_type,
+                item_id=item_id,  # This now references Item.itemId
+                details=details
+            )
+            db.add(log_entry)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            return False
 
     def get_logs(
         self,
         db: Session,
         start_date: datetime,
         end_date: datetime,
-        item_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        action_type: Optional[str] = None
-    ) -> LogResponse:
+        item_id: str = None,
+        user_id: str = None,
+        action_type: str = None
+    ) -> Dict[str, List[Dict]]:
         # Ensure dates are timezone-aware
         if start_date.tzinfo is None:
             start_date = start_date.replace(tzinfo=timezone.utc)
@@ -51,7 +54,7 @@ class LoggingService:
         
         # Apply optional filters
         if item_id:
-            query = query.filter(Log.item_id == str(item_id))  # Ensure string ID
+            query = query.filter(Log.item_id == item_id)
         if user_id:
             query = query.filter(Log.user_id == user_id)
         if action_type:
@@ -61,14 +64,17 @@ class LoggingService:
         query = query.order_by(Log.timestamp)
         
         # Convert to response format
-        logs = []
-        for log in query.all():
-            logs.append(LogEntry(
-                timestamp=log.timestamp,
-                userId=log.user_id,
-                actionType=log.action_type,
-                itemId=log.item_id,
-                details=log.details or {}
-            ))
-            
-        return LogResponse(logs=logs)
+        logs = query.all()
+        
+        return {
+            "logs": [
+                {
+                    "timestamp": log.timestamp.isoformat(),
+                    "userId": log.user_id,
+                    "actionType": log.action_type,
+                    "itemId": log.item_id,
+                    "details": log.details or {}
+                }
+                for log in logs
+            ]
+        }

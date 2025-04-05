@@ -1,15 +1,31 @@
 from typing import List, Dict, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 class Coordinates(BaseModel):
-    width: float
-    depth: float
-    height: float
+    width: float = Field(ge=0)
+    depth: float = Field(ge=0)
+    height: float = Field(ge=0)
+
+    @validator('width', 'depth', 'height')
+    def validate_dimensions(cls, v):
+        if v < 0:
+            raise ValueError("Dimensions cannot be negative")
+        return v
 
 class Position(BaseModel):
     start_coordinates: Coordinates
     end_coordinates: Coordinates
+
+    @validator('end_coordinates')
+    def validate_end_coordinates(cls, v, values):
+        if 'start_coordinates' in values:
+            start = values['start_coordinates']
+            if (v.width < start.width or 
+                v.depth < start.depth or 
+                v.height < start.height):
+                raise ValueError("End coordinates must be greater than start coordinates")
+        return v
 
     # For backward compatibility
     @property
@@ -21,45 +37,82 @@ class Position(BaseModel):
         return self.end_coordinates.model_dump()
 
 class Item(BaseModel):
-    item_id: str = Field(alias="itemId")
+    item_id: str = Field(alias="itemId", min_length=1)
     name: str
-    width: float
-    depth: float
-    height: float
+    width: float = Field(gt=0)
+    depth: float = Field(gt=0)
+    height: float = Field(gt=0)
     priority: int = Field(ge=0, le=100)
     expiry_date: Optional[datetime] = Field(None, alias="expiryDate")
-    usage_limit: Optional[int] = Field(None, alias="usageLimit")
+    usage_limit: Optional[int] = Field(None, alias="usageLimit", ge=0)
     preferred_zone: str = Field(alias="preferredZone")
 
+    @validator('width', 'depth', 'height')
+    def validate_dimensions(cls, v):
+        if v <= 0:
+            raise ValueError("Dimensions must be positive")
+        return v
+
 class Container(BaseModel):
-    container_id: str = Field(alias="containerId")
+    container_id: str = Field(alias="containerId", min_length=1)
     zone: str
-    width: float
-    depth: float
-    height: float
+    width: float = Field(gt=0)
+    depth: float = Field(gt=0)
+    height: float = Field(gt=0)
+
+    @validator('width', 'depth', 'height')
+    def validate_dimensions(cls, v):
+        if v <= 0:
+            raise ValueError("Dimensions must be positive")
+        return v
 
 class PlacementStep(BaseModel):
-    step: int
-    action: str
+    step: int = Field(gt=0)
+    action: str = Field(pattern="^(move|remove|place)$")
     item_id: str = Field(alias="itemId")
     from_container: Optional[str] = Field(None, alias="fromContainer")
     from_position: Optional[Position] = Field(None, alias="fromPosition")
     to_container: str = Field(alias="toContainer")
     to_position: Position = Field(alias="toPosition")
 
+    @validator('action')
+    def validate_action(cls, v):
+        valid_actions = {'move', 'remove', 'place'}
+        if v not in valid_actions:
+            raise ValueError(f"Invalid action. Must be one of: {valid_actions}")
+        return v
+
 class PlacementRequest(BaseModel):
     items: List[Item]
     containers: List[Container]
+
+    @validator('items')
+    def validate_items(cls, v):
+        if not v:
+            raise ValueError("At least one item must be provided")
+        return v
+
+    @validator('containers')
+    def validate_containers(cls, v):
+        if not v:
+            raise ValueError("At least one container must be provided")
+        return v
 
 class ItemPlacement(BaseModel):
     item_id: str = Field(alias="itemId")
     container_id: str = Field(alias="containerId")
     position: Position
 
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
+
 class PlacementResponse(BaseModel):
     success: bool
     placements: List[ItemPlacement]
     rearrangements: List[PlacementStep]
+    unplaced_items: List[str] = Field(default_factory=list, alias="unplacedItems")
+    space_utilization: Dict[str, float] = Field(default_factory=dict, alias="spaceUtilization")
 
 class RetrievalStep(BaseModel):
     step: int

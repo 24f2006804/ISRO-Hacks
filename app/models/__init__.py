@@ -7,7 +7,7 @@ Base = declarative_base()
 class Item(Base):
     __tablename__ = "items"
 
-    id = Column(String, primary_key=True)
+    itemId = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     width = Column(Float, nullable=False)
     depth = Column(Float, nullable=False)
@@ -19,10 +19,15 @@ class Item(Base):
     uses_remaining = Column(Integer, nullable=True)
     preferred_zone = Column(String, nullable=False)
     container_id = Column(String, ForeignKey("containers.id"), nullable=True)
-    position = Column(JSON, nullable=True)  # Stores position data as JSON
+    position = Column(JSON, nullable=True)
     is_waste = Column(Boolean, default=False)
 
     container = relationship("Container", back_populates="items")
+
+    @property
+    def id(self):
+        """Backward compatibility for id attribute"""
+        return self.itemId
 
 class Container(Base):
     __tablename__ = "containers"
@@ -42,7 +47,7 @@ class Log(Base):
     timestamp = Column(DateTime, nullable=False)
     user_id = Column(String, nullable=False)
     action_type = Column(String, nullable=False)
-    item_id = Column(String, ForeignKey("items.id"), nullable=False)
-    details = Column(JSON, nullable=True)  # Additional action details as JSON
+    item_id = Column(String, ForeignKey("items.itemId"), nullable=False)
+    details = Column(JSON, nullable=True)
 
     item = relationship("Item")
